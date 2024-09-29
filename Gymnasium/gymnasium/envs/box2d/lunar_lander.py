@@ -373,7 +373,7 @@ class LunarLander(gym.Env, EzPickle):
 
         # Create Lander body
         initial_y = VIEWPORT_H / SCALE
-        initial_x = VIEWPORT_W / SCALE / 2
+        initial_x = VIEWPORT_W / SCALE / 2 + np.random.uniform(-VIEWPORT_W/4, VIEWPORT_W/4) / SCALE
         self.lander: Box2D.b2Body = self.world.CreateDynamicBody(
             position=(initial_x, initial_y),
             angle=0.0,
