@@ -1,3 +1,5 @@
 swig
 Gymnasium[box2d]
 torch
+numpy
+matplotlib
