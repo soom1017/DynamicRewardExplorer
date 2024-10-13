@@ -1,5 +1,6 @@
 swig
-Gymnasium[box2d]
+gymnasium
+box2d-py
 torch
 numpy
 matplotlib

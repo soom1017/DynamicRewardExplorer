@@ -10,11 +10,13 @@ import gymnasium as gym
 
 from .util import Logger
 from rl_baseline.a2c import A2CAgent as A2CBaseline
+from rl_baseline.a2c_discrete import A2CAgent as A2CDiscrete
 
 cur_dir = Path(os.path.dirname(__file__))
 
 AGENT = {
     'a2c_baseline': A2CBaseline,
+    'a2c_discrete': A2CDiscrete,
 }
 
 def main(args):
@@ -22,11 +24,12 @@ def main(args):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-    env = gym.make("LunarLander-v3", continuous=True, render_mode="rgb_array")
+    args.discrete = args.get('discrete', True)
+    env = gym.make("LunarLander-v3", continuous=False if args.discrete else True, render_mode="rgb_array")
     state, info = env.reset(seed=seed)
 
     args.train.obs_dim = env.observation_space.shape[0]
-    args.train.act_dim = env.action_space.shape[0]
+    args.train.act_dim = int(env.action_space.n) if args.discrete else env.action_space.shape[0]
     args.train.device = "cuda" if torch.cuda.is_available() else "cpu"
     args.log = args.get('log', True)
     

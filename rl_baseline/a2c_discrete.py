@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.optim import Adam
-from torch.distributions.normal import Normal
+from torch.distributions import Categorical
 
 import gymnasium as gym
 from tqdm import tqdm
@@ -18,14 +18,14 @@ def init_weights(m):
         torch.nn.init.xavier_normal_(m.weight)
         m.bias.data.fill_(0)
         
-def log_prob_from_dist(dist: Normal, act: Tensor) -> Tensor:
+def log_prob_from_dist(dist: Categorical, act: Tensor) -> Tensor:
     return dist.log_prob(act).sum(axis=-1)
         
 # Actor-Critic
 class Actor(nn.Module):
     def __init__(self, obs_dim: int, hidden_dim: int, act_dim: int, dropout: float = 0.1):
         super().__init__()
-        self.mu = nn.Sequential(
+        self.net = nn.Sequential(
             nn.Linear(obs_dim, hidden_dim),
             nn.Dropout(dropout),
             nn.PReLU(),
@@ -33,16 +33,15 @@ class Actor(nn.Module):
             nn.Dropout(dropout),
             nn.PReLU(),
             nn.Linear(hidden_dim, act_dim),
-            nn.Tanh()
+            nn.Softmax(dim=-1)
         )
         self.log_std = torch.nn.Parameter(torch.as_tensor(
             -0.5 * np.ones(act_dim, dtype=np.float32)
         ))
 
-    def get_distribution(self, obs: Tensor) -> Normal:
-        mu = self.mu(obs)
-        std = torch.exp(self.log_std)
-        return Normal(mu, std)
+    def get_distribution(self, obs: Tensor) -> Categorical:
+        x = self.net(obs)
+        return Categorical(x)
 
     def forward(self, obs: Tensor, act: Optional[Tensor]) -> Tuple[Tensor, Optional[Tensor]]:
         dist = self.get_distribution(obs)
@@ -77,7 +76,7 @@ class ActorCritic(nn.Module):
         with torch.no_grad():
             dist = self.pi.get_distribution(obs)
             act = dist.sample()
-        return act.squeeze().cpu().numpy()
+        return act.item()
         
     def infer(self, obs: Tensor):
         with torch.no_grad():
@@ -103,7 +102,7 @@ class A2CAgent:
     def set_logger(self, log_dir, logger: Logger):
         self.log_dir = log_dir
         self.logger = logger
-
+    
     def test(self, env: gym.Env):
         state, _ = env.reset()
         term = False
@@ -114,6 +113,7 @@ class A2CAgent:
             
             action = self.model.step(obs)
             state, _, term, trunc, _ = env.step(action)
+
 
     def train(self, env: gym.Env):
         max_epRet = float("-INF")
