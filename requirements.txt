@@ -1,6 +1,10 @@
+torch
+numpy==1.26.2
+matplotlib
+omegaconf
+tqdm
+wandb
 swig
 gymnasium
 box2d-py
-torch
-numpy
-matplotlib
+pygame
