@@ -11,12 +11,16 @@ import gymnasium as gym
 from .util import Logger
 from rl_baseline.a2c import A2CAgent as A2CBaseline
 from rl_baseline.a2c_discrete import A2CAgent as A2CDiscrete
+from rl_baseline.ppo import PPOBaseline
+from rl_roboclip.roboclip import RoboClip
 
 cur_dir = Path(os.path.dirname(__file__))
 
 AGENT = {
     'a2c_baseline': A2CBaseline,
     'a2c_discrete': A2CDiscrete,
+    'ppo_baseline': PPOBaseline,
+    'roboclip': RoboClip,
 }
 
 def main(args):
@@ -38,6 +42,7 @@ def main(args):
     if args.log:
         # init wandb logger
         wandb.init(project="LunarLander", name=args.agent, config=dict(args), entity="flybyml")
+        wandb.init(project="LunarLander", name=args.agent, config=dict(args))
         wandb.watch(agent.model)
         # configure model checkpoint save and log dir
         log_dir = Path(cur_dir / "log" / args.agent)
