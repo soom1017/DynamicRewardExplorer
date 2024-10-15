@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -5,6 +6,7 @@ import torch.nn.functional as F
 import torch.distributions as distributions
 import gymnasium as gym
 
+from tqdm import tqdm
 from experiments.util import Logger
 
 
@@ -45,7 +47,7 @@ def init_weights(m):
         torch.nn.init.xavier_normal_(m.weight)
         m.bias.data.fill_(0)
 
-class RoboClip():
+class PPOBaseline():
     def __init__(self, args):
         self.args = args
 
@@ -91,7 +93,6 @@ class RoboClip():
             log_prob_action = dist.log_prob(action)
 
             state, reward, term, trunc, _ = env.step(action.item())
-            # TODO implement roboclip reward
 
             # log for updating policy
             actions.append(action.cpu())
@@ -166,8 +167,10 @@ class RoboClip():
         return total_policy_loss, total_value_loss, episode_reward, n_step
 
     def train(self, env: gym.Env):
+        max_episode_reward = float("-INF")
+
         # for each episode
-        for _ in range(self.args.max_episode):
+        for episode in tqdm(range(self.args.max_episode)):
             policy_loss, value_loss, episode_reward, n_step = self.train_step(env)
 
             if self.logger is not None:
@@ -181,3 +184,10 @@ class RoboClip():
                 self.logger.log('EpRet')
                 self.logger.log('EpLen')
                 self.logger.flush()
+
+                # save checkpoint
+                if episode_reward > max_episode_reward:
+                    if episode > 0:
+                        os.remove(self.log_dir / f"{max_episode_reward}.ckpt")
+                    torch.save(self.model.state_dict(), self.log_dir / f"{episode_reward}.ckpt")
+                    max_episode_reward = episode_reward
