@@ -10,6 +10,13 @@
             "request": "launch",
             "module": "experiments.train",
             "args": ["ppo_baseline"]
+        },
+        {
+            "name": "test",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "experiments.test",
+            "args": ["ppo_baseline"]
         }
     ]
 }
