@@ -218,8 +218,10 @@ class RoboClip():
         return total_policy_loss, total_value_loss, heur_episode_reward, roboclip_reward, n_step
 
     def train(self, env: gym.Env):
+        max_episode_reward = float("-INF")
+
         # for each episode
-        for _ in tqdm(range(self.args.max_episode)):
+        for episode in tqdm(range(self.args.max_episode)):
             policy_loss, value_loss, episode_reward, roboclip_reward, n_step = self.train_step(env)
 
             if self.logger is not None:
@@ -235,3 +237,10 @@ class RoboClip():
                 self.logger.log('VLMEpRet')
                 self.logger.log('EpLen')
                 self.logger.flush()
+
+                # save checkpoint
+                if episode_reward > max_episode_reward:
+                    if episode > 0:
+                        os.remove(self.log_dir / f"{max_episode_reward}.ckpt")
+                    torch.save(self.model.state_dict(), self.log_dir / f"{episode_reward}.ckpt")
+                    max_episode_reward = episode_reward
