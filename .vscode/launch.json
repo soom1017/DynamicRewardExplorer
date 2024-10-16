@@ -9,7 +9,7 @@
             "type": "debugpy",
             "request": "launch",
             "module": "experiments.train",
-            "args": ["ppo_baseline"]
+            "args": ["roboclip"]
         },
         {
             "name": "test",

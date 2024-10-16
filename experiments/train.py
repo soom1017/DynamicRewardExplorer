@@ -42,7 +42,6 @@ def main(args):
     if args.log:
         # init wandb logger
         wandb.init(project="LunarLander", name=args.agent, config=dict(args), entity="flybyml")
-        wandb.init(project="LunarLander", name=args.agent, config=dict(args))
         wandb.watch(agent.model)
         # configure model checkpoint save and log dir
         log_dir = Path(cur_dir / "log" / args.agent)

@@ -1,3 +1,4 @@
+log: True
 seed: 42
 agent: roboclip
 train:
