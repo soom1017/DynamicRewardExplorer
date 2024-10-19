@@ -48,7 +48,7 @@ def init_weights(m):
         m.bias.data.fill_(0)
 
 class PPOBaseline():
-    def __init__(self, args):
+    def __init__(self, args, ckpt_path=None):
         self.args = args
 
         # initialize policy
@@ -56,7 +56,11 @@ class PPOBaseline():
             actor = MLP(args.obs_dim, args.hidden_dim, args.act_dim),
             critic = MLP(args.obs_dim, args.hidden_dim, 1)
         )
-        self.model.apply(init_weights)
+        self.ckpt_path = ckpt_path
+        if ckpt_path is None:
+            self.model.apply(init_weights)
+        else:
+            self.model.load_state_dict(torch.load(ckpt_path, weights_only=True))
         self.model = self.model.to(args.device)
 
         # initialize optimizer
@@ -191,3 +195,17 @@ class PPOBaseline():
                         os.remove(self.log_dir / f"{max_episode_reward}.ckpt")
                     torch.save(self.model.state_dict(), self.log_dir / f"{episode_reward}.ckpt")
                     max_episode_reward = episode_reward
+
+    def test(self, env: gym.Env):
+        term = trunc = False        
+
+        self.model.eval()
+        state, _ = env.reset()
+
+        while not (term or trunc):
+            # sample deterministic action
+            action_pred, _ = self.model(torch.FloatTensor(state).unsqueeze(0).to(self.args.device))
+            action = torch.argmax(action_pred)
+
+            state, _, term, trunc, _ = env.step(action.item()) 
+            env.render()
