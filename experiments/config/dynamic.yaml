@@ -1,0 +1,10 @@
+log: True
+seed: 42
+agent: dynamic
+train:
+  max_episode: 1000
+  hidden_dim: 128
+  lr: 0.0005
+  discount_factor: 0.99
+  ppo_steps: 5
+  ppo_clip: 0.2
