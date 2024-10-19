@@ -8,7 +8,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import torch.distributions as distributions
-from torchvision.transforms import ToTensor
 from tqdm import tqdm
 import gymnasium as gym
 import cv2
@@ -32,7 +31,7 @@ class DynamicReward:
         1. extract CLIP features from every demo 
         2. calculate dtw of current trajectory with the most similar one
     """
-    def __init__(self, args):
+    def __init__(self, args, train = True, ckpt_path = None):
         self.logger = None
         self.args = args
 
@@ -41,28 +40,32 @@ class DynamicReward:
             actor = MLP(args.obs_dim, args.hidden_dim, args.act_dim),
             critic = MLP(args.obs_dim, args.hidden_dim, 1)
         )
-        self.model.apply(init_weights)
+        if train:
+            self.model.apply(init_weights)
+        if ckpt_path is not None:
+            self.model.load_state_dict(torch.load(ckpt_path, weights_only=True))
         self.model = self.model.to(args.device)
 
-        # load CLiP
-        self.clip, self.preprocess = clip.load("ViT-B/32", device=self.args.device)
-        
-        # extract features of demo videos in advance
-        self.demo_feats = []
-        
-        demo_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "demonstration"
-        demo_names = os.listdir(demo_dir)
-        for demo_name in demo_names:
-            demo_frames = os.listdir(demo_dir / demo_name)
-            demo_frames.sort()
+        if train:
+            # load CLiP
+            self.clip, self.preprocess = clip.load("ViT-B/32", device=self.args.device)
             
-            frames = []
-            for idx in demo_frames:
-                frames.append(Image.open(demo_dir / demo_name / idx))
-            self.demo_feats.append([self.extract_feat(frame) for frame in frames])
+            # extract features of demo videos in advance
+            self.demo_feats = []
+            
+            demo_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "demonstration"
+            demo_names = os.listdir(demo_dir)
+            for demo_name in demo_names:
+                demo_frames = os.listdir(demo_dir / demo_name)
+                demo_frames.sort()
+                
+                frames = []
+                for idx in demo_frames:
+                    frames.append(Image.open(demo_dir / demo_name / idx))
+                self.demo_feats.append([self.extract_feat(frame) for frame in frames])
 
-        # initialize optimizer
-        self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr)
+            # initialize optimizer
+            self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr)
 
     def extract_feat(self, frame: Image.Image):
         with torch.no_grad():
@@ -229,3 +232,17 @@ class DynamicReward:
                         os.remove(self.log_dir / f"{max_episode_reward}.ckpt")
                     torch.save(self.model.state_dict(), self.log_dir / f"{episode_reward}.ckpt")
                     max_episode_reward = episode_reward
+
+    def test(self, env: gym.Env):
+        term = trunc = False        
+
+        self.model.eval()
+        state, _ = env.reset()
+
+        while not (term or trunc):
+            # sample deterministic action
+            action_pred, _ = self.model(torch.FloatTensor(state).unsqueeze(0).to(self.args.device))
+            action = torch.argmax(action_pred)
+
+            state, _, term, trunc, _ = env.step(action.item()) 
+            env.render()

@@ -11,6 +11,7 @@ import gymnasium as gym
 from rl_baseline.a2c import A2CAgent as A2CBaseline
 from rl_baseline.a2c_discrete import A2CAgent as A2CDiscrete
 from rl_baseline.ppo import PPOBaseline
+from rl_dynamic_reward.ppo_discrete import DynamicReward
 
 cur_dir = Path(os.path.dirname(__file__))
 
@@ -18,6 +19,7 @@ AGENT = {
     'a2c_baseline': A2CBaseline,
     'a2c_discrete': A2CDiscrete,
     'ppo_baseline': PPOBaseline,
+    'dynamic': DynamicReward,
 }
 
 def main(args):
