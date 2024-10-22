@@ -14,6 +14,7 @@ from rl_baseline.a2c_discrete import A2CAgent as A2CDiscrete
 from rl_baseline.ppo import PPOBaseline
 from rl_roboclip.roboclip import RoboClip
 from rl_dynamic_reward.ppo_discrete import DynamicReward
+from rl_gpt.gpt import GPT
 
 cur_dir = Path(os.path.dirname(__file__))
 
@@ -23,6 +24,7 @@ AGENT = {
     'ppo_baseline': PPOBaseline,
     'roboclip': RoboClip,
     'dynamic': DynamicReward,
+    'gpt': GPT
 }
 
 def main(args):
