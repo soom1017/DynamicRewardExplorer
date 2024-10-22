@@ -1,4 +1,4 @@
-log: False
+log: True
 seed: 42
 agent: gpt
 train:

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Tuple
 
 import re
 import io
@@ -60,9 +60,17 @@ def init_weights(m):
 
 class OpenaiRewardGenerator():
     def __init__(self):
+        self.n_iter = 0
+        self.n_cache_use = 0
+
         openai_key_path = r"C:\Users\litco\Desktop\project\openai_key.txt"
         with open(openai_key_path, "r") as f:
             self.openai_key = f.readline().rstrip()
+        
+        self.log_interval = 50
+        self.cache_thresh = 0.1
+        self.cache_mat = None
+        self.cache_val = []
     
     def preprocess_frame(self, frame: np.array):
         frame = Image.fromarray(frame)
@@ -73,7 +81,50 @@ class OpenaiRewardGenerator():
 
         return base64.b64encode(binary).decode('utf-8')
 
-    def generate(self, frame: np.array) -> Optional[float]:
+    def norm_state(self, state):
+        x, y, _, _, ang, _, _, _ = tuple(state)
+        x_norm, y_norm = x/1.5, y/1.5 # normalize [-1, 1]
+        ang_norm = ang/5 # normalize [-1, 1]
+        return np.reshape(np.array([x_norm, y_norm, ang_norm]), (1, 3))
+    
+    def print_cache_usage(self):
+        rew_dist = np.array(self.cache_val)
+        if self.n_iter % self.log_interval == 0:
+            print(f"[Iter {self.n_iter}]Cache Usage Rate: {(self.n_cache_use/self.n_iter)*100:.2f}% Mean: {np.mean(rew_dist):.2f} Std: {np.std(rew_dist):.2f}")
+
+    def get_cache(self, state) -> Tuple[bool, Optional[float]]:
+        norm_state = self.norm_state(state)
+
+        if self.cache_mat is None:
+            return False, None
+        
+        distances = np.linalg.norm(self.cache_mat - norm_state, axis=1)
+        nearest_idx = np.argmin(distances)
+        nearest_dist = distances[nearest_idx]
+
+        if nearest_dist < self.cache_thresh:
+            return True, self.cache_val[nearest_idx]
+        else:
+            return False, None
+    
+    def store_cache(self, state, reward):
+        norm_state = self.norm_state(state)
+        if self.cache_mat is None:
+            self.cache_mat = norm_state
+        else:
+            self.cache_mat = np.vstack((self.cache_mat, norm_state))
+        self.cache_val.append(reward)
+
+    def generate(self, frame: np.array, state) -> Optional[float]:
+        self.n_iter += 1
+
+        # assess if current state can use cached reward
+        usable, cached_reward = self.get_cache(state)
+        if usable:
+            self.n_cache_use += 1
+            self.print_cache_usage()
+            return cached_reward
+
         client = openai.OpenAI(api_key=self.openai_key)        
 
         system_prompt = """
@@ -85,7 +136,7 @@ class OpenaiRewardGenerator():
 
         user_prompt = """
         This is a picture of a purple lunarlander landing.
-        The goal is to land in between yellow flags.
+        The goal is to land in between yellow flags. (avoid luanr lander from banking too hard)
         Accounting that the lunarlander can be placed wherever in the black backgroud,
         generate a reward from 0 to 1 (floating point number up to 3 decimal points) to train reinforcement learning model.
         ONLY return the floating point reward number.
@@ -120,7 +171,10 @@ class OpenaiRewardGenerator():
         content = response.choices[0].message.content
         match = re.search(r'[-+]?\d*\.\d+|\d+', content)
         if match:
-            return float(match.group())
+            generated_reward = float(match.group())
+            self.store_cache(state, generated_reward)
+            self.print_cache_usage()
+            return generated_reward
         else:
             print(f"[openai] returned non floating point number: {content}")
             return None
@@ -176,7 +230,7 @@ class GPT():
             log_prob_action = dist.log_prob(action)
 
             state, heur_reward, term, trunc, _ = env.step(action.item())
-            vlm_reward = self.reward_generator.generate(frame=env.render())
+            vlm_reward = self.reward_generator.generate(frame=env.render(), state=state)
             if vlm_reward is None:
                 vlm_reward = 0
 
