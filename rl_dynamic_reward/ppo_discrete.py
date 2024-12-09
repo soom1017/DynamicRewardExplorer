@@ -102,7 +102,7 @@ class DynamicReward:
         log_prob_actions = []
         values = []
         frames = [] # list of frames(ndarray shape:[400, 600, 3])
-        heur_episode_reward = 0
+        heur_episode_reward = []
         term = False
         trunc = False
 
@@ -130,20 +130,15 @@ class DynamicReward:
             log_prob_actions.append(log_prob_action.cpu())
             values.append(value_pred.cpu())
 
-            heur_episode_reward += heur_reward
+            heur_episode_reward.append(heur_reward)
 
             n_step += 1
             
-        dynamic_reward = 0
         if n_step > 0:
-            # normalize episode reward
-            heur_episode_reward /= n_step
-
             # construct dynamic reward
             rewards = self.construct_clip_reward(frames)
             rewards.extend([0] * (len(values) - len(rewards) - 1))
             rewards.append(values[-1])
-            dynamic_reward += sum(rewards)
         
         states = torch.cat(states)
         actions = torch.cat(actions)
@@ -156,8 +151,20 @@ class DynamicReward:
         for r in reversed(rewards):
             R = r + R * self.args.discount_factor
             returns.insert(0, R)
+        # - save sum of return
+        sum_ret = sum(returns)
         returns = torch.tensor(returns)
         returns = (returns - returns.mean()) / returns.std() # normalize
+        # calculate heuristic return
+        heur_returns = []
+        R = 0
+        for r in reversed(heur_episode_reward):
+            R = r + R * self.args.discount_factor
+            heur_returns.insert(0, R)
+        # - save sum of heuristic return
+        sum_heur_ret = sum(heur_returns)
+        heur_returns = torch.tensor(heur_returns)
+        heur_returns = (heur_returns - heur_returns.mean()) / heur_returns.std() # normalize
 
         # calculate advantages
         advantages = returns - values
@@ -203,20 +210,20 @@ class DynamicReward:
         total_policy_loss /= self.args.ppo_steps
         total_value_loss /= self.args.ppo_steps
 
-        return total_policy_loss, total_value_loss, heur_episode_reward, dynamic_reward.item(), n_step
+        return total_policy_loss, total_value_loss, sum_heur_ret.item(), sum_ret.item(), n_step
 
     def train(self, env: gym.Env):
-        max_episode_reward = float("-INF")
+        max_heur_ret = float("-INF")
 
         # for each episode
         for episode in tqdm(range(self.args.max_episode)):
-            policy_loss, value_loss, episode_reward, dynamic_reward, n_step = self.train_step(env)
+            policy_loss, value_loss, heur_ret, dynamic_ret, n_step = self.train_step(env)
 
             if self.logger is not None:
                 self.logger.add(LossPi=policy_loss)
                 self.logger.add(LossV=value_loss)
-                self.logger.add(EpRet=episode_reward)
-                self.logger.add(VLMEpRet=dynamic_reward)
+                self.logger.add(EpRet=heur_ret)
+                self.logger.add(VLMEpRet=dynamic_ret)
                 self.logger.add(EpLen=n_step)
 
                 self.logger.log('LossPi')
@@ -227,11 +234,11 @@ class DynamicReward:
                 self.logger.flush()
 
                 # save checkpoint
-                if episode_reward > max_episode_reward:
+                if heur_ret > max_heur_ret:
                     if episode > 0:
-                        os.remove(self.log_dir / f"{max_episode_reward}.ckpt")
-                    torch.save(self.model.state_dict(), self.log_dir / f"{episode_reward}.ckpt")
-                    max_episode_reward = episode_reward
+                        os.remove(self.log_dir / f"{max_heur_ret}.ckpt")
+                    torch.save(self.model.state_dict(), self.log_dir / f"{heur_ret}.ckpt")
+                    max_heur_ret = heur_ret
 
     def test(self, env: gym.Env):
         term = trunc = False        
