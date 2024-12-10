@@ -168,3 +168,9 @@ wandb/*
 
 *.pth
 *.npy
+
+# openai
+openai_key.txt
+
+# mac
+.DS_Store

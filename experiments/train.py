@@ -12,9 +12,11 @@ from .util import Logger
 from rl_baseline.a2c import A2CAgent as A2CBaseline
 from rl_baseline.a2c_discrete import A2CAgent as A2CDiscrete
 from rl_baseline.ppo import PPOBaseline
+from rl_baseline.ppo_continuous import PPOBaseline as PPOCont
 from rl_roboclip.roboclip import RoboClip
 from rl_dynamic_reward.ppo_discrete import DynamicReward
 from rl_gpt.gpt import GPT
+from rl_gpt.gpt_continuous import GPT as GPTCont
 
 cur_dir = Path(os.path.dirname(__file__))
 
@@ -22,9 +24,11 @@ AGENT = {
     'a2c_baseline': A2CBaseline,
     'a2c_discrete': A2CDiscrete,
     'ppo_baseline': PPOBaseline,
+    'ppo_continuous': PPOCont,
     'roboclip': RoboClip,
     'dynamic': DynamicReward,
-    'gpt': GPT
+    'gpt': GPT,
+    'gpt_continuous': GPTCont
 }
 
 def main(args):

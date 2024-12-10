@@ -8,6 +8,8 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import torch.distributions as distributions
+from torch import Tensor
+from torch.distributions.normal import Normal
 import gymnasium as gym
 import numpy as np
 import openai
@@ -21,23 +23,51 @@ from experiments.util import Logger
 
 cur_dir = Path(os.path.dirname(__file__))
 
-class MLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, dropout = 0.1):
+def log_prob_from_dist(dist: Normal, act: Tensor) -> Tensor:
+    return dist.log_prob(act).sum(axis=-1)
+
+class Actor(nn.Module):
+    def __init__(self, obs_dim, hidden_dim, act_dim, dropout = 0.1):
         super().__init__()
-        
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
+        self.mu = nn.Sequential(
+            nn.Linear(obs_dim, hidden_dim),
             nn.Dropout(dropout),
             nn.PReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.Dropout(dropout),
             nn.PReLU(),
-            nn.Linear(hidden_dim, output_dim)
+            nn.Linear(hidden_dim, act_dim),
+            nn.Tanh()
         )
-        
-    def forward(self, x):
-        x = self.net(x)
-        return x
+        self.log_std = torch.nn.Parameter(torch.as_tensor(
+            -0.5 * np.ones(act_dim, dtype=np.float32)
+        ))
+
+    def get_distribution(self, obs):
+        mu = self.mu(obs)
+        std = torch.exp(self.log_std)
+        return Normal(mu, std)
+
+    def forward(self, obs, act):
+        dist = self.get_distribution(obs)
+        log_prob = log_prob_from_dist(dist, act)
+        return log_prob
+
+class Critic(nn.Module):
+    def __init__(self, obs_dim, hidden_dim, dropout = 0.1):
+        super().__init__()
+        self.critic = nn.Sequential(
+            nn.Linear(obs_dim, hidden_dim),
+            nn.Dropout(dropout),
+            nn.PReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.Dropout(dropout),
+            nn.PReLU(),
+            nn.Linear(hidden_dim, 1)
+        )
+
+    def forward(self, obs: Tensor):
+        return torch.squeeze(self.critic(obs), -1)
 
 class ActorCritic(nn.Module):
     def __init__(self, actor, critic):
@@ -48,7 +78,7 @@ class ActorCritic(nn.Module):
         
     def forward(self, state):
         
-        action_pred = self.actor(state)
+        action_pred = self.actor.get_distribution(state)
         value_pred = self.critic(state)
         
         return action_pred, value_pred
@@ -188,8 +218,8 @@ class GPT():
 
         # initialize policy
         self.model = ActorCritic(
-            actor = MLP(args.obs_dim, args.hidden_dim, args.act_dim),
-            critic = MLP(args.obs_dim, args.hidden_dim, 1)
+            actor = Actor(args.obs_dim, args.hidden_dim, args.act_dim),
+            critic = Critic(args.obs_dim, args.hidden_dim, 1)
         )
         self.model.apply(init_weights)
         self.model = self.model.to(args.device)
@@ -225,12 +255,10 @@ class GPT():
             action_pred, value_pred = self.model(state.to(self.args.device))
 
             # sample action
-            action_prob = F.softmax(action_pred, dim = -1)
-            dist = distributions.Categorical(action_prob)
-            action = dist.sample()
-            log_prob_action = dist.log_prob(action)
+            action = action_pred.sample().squeeze()
+            log_prob_action = self.model.actor(state, action)
 
-            state, heur_reward, term, trunc, _ = env.step(action.item())
+            state, heur_reward, term, trunc, _ = env.step(action.numpy())
             vlm_reward = self.reward_generator.generate(frame=env.render(), state=state)
             if vlm_reward is None:
                 vlm_reward = 0
@@ -252,7 +280,7 @@ class GPT():
             vlm_episode_reward /= n_step
         
         states = torch.cat(states)
-        actions = torch.cat(actions)
+        actions = torch.stack(actions)
         log_prob_actions = torch.cat(log_prob_actions)
         values = torch.cat(values).squeeze(-1)
 
@@ -282,11 +310,9 @@ class GPT():
         for _ in range(self.args.ppo_steps):
             action_pred, value_pred = self.model(states)
             value_pred = value_pred.squeeze(-1)
-            action_prob = F.softmax(action_pred, dim=-1)
-            dist = distributions.Categorical(action_prob)
 
             # calculate policy ratio
-            new_log_prob_actions = dist.log_prob(actions)
+            new_log_prob_actions = log_prob_from_dist(action_pred, actions)
             policy_ratio = (new_log_prob_actions - log_prob_actions).exp()
 
             # calculate policy loss
@@ -338,3 +364,17 @@ class GPT():
                         os.remove(self.log_dir / f"{max_episode_reward}.ckpt")
                     torch.save(self.model.state_dict(), self.log_dir / f"{episode_reward}.ckpt")
                     max_episode_reward = episode_reward
+                    
+    def test(self, env: gym.Env):
+        term = trunc = False        
+
+        self.model.eval()
+        state, _ = env.reset()
+
+        while not (term or trunc):
+            # sample deterministic action
+            action_pred, _ = self.model(torch.FloatTensor(state).unsqueeze(0).to(self.args.device))
+            action = action_pred.sample().squeeze()
+
+            state, _, term, trunc, _ = env.step(action.numpy()) 
+            env.render()
